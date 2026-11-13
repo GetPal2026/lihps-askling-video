@@ -1,0 +1,18 @@
+{
+  "id": "./",
+  "name": "LIHPS Askling Video",
+  "short_name": "Askling Video",
+  "description": "Offline Askling H-Test video analysis",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone"],
+  "background_color": "#f6f8fc",
+  "theme_color": "#f6f8fc",
+  "orientation": "portrait",
+  "icons": [
+    {"src":"./icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"./icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
+    {"src":"./icons/icon-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
+  ]
+}

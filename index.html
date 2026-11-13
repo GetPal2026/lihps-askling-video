@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-title" content="Askling Video">
+  <title>Askling H-Test · LIHPS Motion Angle</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/icon-180.png">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+<main>
+  <header class="masthead">
+    <img src="./icons/icon-192.png" alt="" width="37" height="37">
+    <span>LIHPS <b>MOTION ANGLE</b></span>
+  </header>
+  <h1>Askling H-Test</h1>
+  <p class="subtitle">Video analysis</p>
+  <section aria-label="Video inputs" class="inputs">
+    <label class="clip"><b>Left video</b><span id="left-name">Choose MOV or MP4</span><input id="left" type="file" accept="video/*,.mov,.mp4"></label>
+    <label class="clip"><b>Right video</b><span id="right-name">Choose MOV or MP4</span><input id="right" type="file" accept="video/*,.mov,.mp4"></label>
+  </section>
+  <div class="viewer" id="viewer">
+    <p id="placeholder">Select a clip to preview</p>
+    <canvas id="preview" hidden aria-label="Video frame and hip, knee and ankle overlay"></canvas>
+  </div>
+  <div class="scrub" id="scrub" hidden>
+    <label for="position">Frame preview</label>
+    <input type="range" id="position" min="0" max="0" value="0" step="1">
+    <output id="time" for="position"></output>
+  </div>
+  <div class="toolbar">
+    <div class="switch" role="group" aria-label="Preview leg">
+      <button id="show-left" aria-pressed="true">Left</button>
+      <button id="show-right" aria-pressed="false">Right</button>
+    </div>
+    <div class="switch" role="group" aria-label="Rotate selected video">
+      <button id="ccw" aria-label="Rotate left 90 degrees" disabled>↶</button>
+      <button id="cw" aria-label="Rotate right 90 degrees" disabled>↷</button>
+    </div>
+  </div>
+  <label id="practice-option" class="check" hidden><input type="checkbox" id="practice"> First raise is practice for this leg</label>
+  <button class="primary" id="process" disabled>Process both videos</button>
+  <button class="soft" id="cancel" hidden>Cancel processing</button>
+  <progress id="progress" hidden aria-label="Analysis progress"></progress>
+  <p id="status" role="status">Choose both clips. The videos are processed on this device.</p>
+  <section id="summary" class="card" hidden aria-labelledby="set-title">
+    <h2 id="set-title">Set summary</h2>
+    <p id="counts"></p>
+    <div id="summary-table"></div>
+    <p>L/R = Left ÷ Right × 100</p>
+    <p id="quality"></p>
+    <button class="soft" id="export">Export repetition CSV</button>
+  </section>
+  <section class="card" id="repetitions" hidden aria-labelledby="rep-title">
+    <h2 id="rep-title">Per repetition</h2>
+    <p>Expand a raise for its measurements and quality flags.</p>
+    <div id="rep-list"></div>
+  </section>
+  <details class="card" id="review" hidden>
+    <summary>Correct landmarks on this frame</summary>
+    <p>Choose a joint, then tap its position in the preview. Review affected repetitions before comparing speeds.</p>
+    <div class="switch joint-buttons">
+      <button data-joint="0" aria-pressed="false">Hip</button>
+      <button data-joint="1" aria-pressed="false">Knee</button>
+      <button data-joint="2" aria-pressed="false">Ankle</button>
+      <button id="restore">Reset frame</button>
+    </div>
+  </details>
+  <details class="card">
+    <summary>Recording and measurement notes</summary>
+    <p>Record from the tested side at hip height. Show the full leg and include at least half a second at rest before the first raise. Keep original capture timing. Select 120 or 240 fps for new recordings when available.</p>
+    <p>Thigh ROM measures hip-to-knee elevation relative to rest. Knee flexion comes from the hip, knee and ankle in the image. Shank ROM and speed are the closest video comparison when the IMU is mounted on the shin. Quality checks flag detectable tracking problems. Review the overlay to catch misplaced joints.</p>
+    <p>Velocity depends on the recorded frame timing and smoothing. This prototype reports 2D measurements for review.</p>
+    <button class="soft" id="prepare">Prepare for offline use</button>
+  </details>
+</main>
+</body>
+</html>
