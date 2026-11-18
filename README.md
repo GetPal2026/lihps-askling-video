@@ -1,26 +1,11 @@
 # LIHPS Askling Video v0.2.1 · iPhone web app
 
-A separate static web app for markerless analysis of one or two side-on videos. It uses MediaPipe Pose Landmarker Full to estimate hip, knee and ankle landmarks and Mediabunny/WebCodecs to decode source frames in presentation order. Each video stays on the device. The web app downloads the decoder, model and runtime on first use.
-
-## Publish alongside Motion Angle
-
-1. Extract the ZIP. In GitHub, create a **new public repository** named `lihps-askling-video` and initialize it with a README.
-2. In the new repository, choose **Add file → Upload files**. Drag in the **contents of the `site` folder**, including `icons`. Commit to `main`. Confirm that `index.html` is at the top level. Upload the application files only. Keep all recordings, previews containing people and patient data off the repository.
-3. Open **Settings → Pages**. Select **Deploy from a branch**, then **main** and **/(root)**, and save.
-4. When the Pages deployment succeeds, use **Visit site**. The address will be `https://YOUR-USERNAME.github.io/lihps-askling-video/`.
-5. Open this address in current iPhone Safari. Choose **Share → Add to Home Screen**, enable **Open as Web App** and tap **Add**.
-6. From the installed app, with networking available, open **Recording and measurement notes** and tap **Prepare for offline use**. If the app requests a reload, close and reopen it first. Then test opening and analysing a short clip pair with networking off. The browser may clear cached assets, so use the same preparation step if needed.
-
-[GitHub Pages publishing settings](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)
-
-## Update an existing deployment
-
-If you already published the video app, upload the contents of the new `site` folder to the **same video repository** and commit the replacements, including the new `review.js`. Wait for GitHub Pages to finish. Fully close and reopen the installed app while online after the update. If needed, reload it in Safari and repeat **Prepare for offline use**. Version 0.2.1 appears in the header. The IMU app uses a separate deployment.
+A static web app for markerless analysis of one or two side-on videos. It uses MediaPipe Pose Landmarker Full to estimate hip, knee and ankle landmarks and Mediabunny/WebCodecs to decode source frames in presentation order. Each video stays on the device. The web app downloads the decoder, model and runtime on first use.
 
 ## Process one or both legs
 
-1. Assign an original camera clip to **Left video** or **Right video**. Either input is sufficient to start. Add both clips when you want a left/right comparison. The clips used for this project are **IMG_1795.mov (left)** and **IMG_1796.mov (right)**.
-2. Use the two rotation buttons to orient each preview. For your existing clips, try the original orientation first. Leave **First raise is practice** off for both clips. The setting is per leg.
+1. Assign an original camera clip to **Left video** or **Right video**. Either input is sufficient to start. Add both clips when you want a left/right comparison.
+2. Use the two rotation buttons to orient each preview or use the original orientation first. Leave **First raise is practice** off for both clips. The setting is per leg.
 3. Tap **Process left video**, **Process right video** or **Process both videos**, according to the selected files. Leave the app open while it decodes and analyses the selected clips. With one clip, the other leg and comparison ratios show a dash. If you later add the second clip, the action changes to **Process both videos** and runs both selected files. The progress message shows the current side, frame count and video time. You can cancel analysis.
 4. Read the **Set summary**, then expand any raise under **Per repetition** for its individual values and QC. **Show peak frame** brings the peak frame and model overlay into view. Use the slider to move across the clip. **Previous frame** and **Next frame** move exactly one decoded frame. The counter uses one-based frame numbers.
 5. Use **Next flagged frame** to jump to the first frame of the next pending stretch. The message shows the reason for the current frame. Step through a stretch to inspect it. After inspection, choose **Mark reviewed** or **Mark stretch reviewed** to remove it from the queue. These actions acknowledge the flags and leave the analysis QC in place.
