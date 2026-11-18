@@ -39,3 +39,9 @@ th:first-child,td:first-child{text-align:left}
 .rep button{margin-bottom:6px}
 .joint-buttons{flex-wrap:wrap}
 #status.error,#quality.warn{color:#9d1c31}
+.frame-controls{padding:5px 0 0}
+.step-buttons,.flag-buttons{display:flex;gap:7px;flex-wrap:wrap}
+.step-buttons button,.flag-buttons button{flex:1 1 120px;font-size:.82rem}
+.frame-controls p{font-size:.79rem;margin:5px 0 7px}
+.scrub output{min-width:7em}
+.version{margin-left:auto;color:var(--muted);letter-spacing:normal}

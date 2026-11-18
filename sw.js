@@ -1,7 +1,7 @@
-const CACHE='lihps-askling-video-pwa-001';
-const SHELL=['./','./index.html','./app.js','./metrics.js','./media.js','./style.css','./manifest.webmanifest',
+const CACHE='lihps-askling-video-pwa-0021';
+const SHELL=['./','./index.html','./app.js','./metrics.js','./review.js','./media.js','./style.css','./manifest.webmanifest',
   './icons/icon-180.png','./icons/icon-192.png','./icons/icon-512.png','./icons/icon-maskable-512.png'];
-self.addEventListener('install', event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL))));
+self.addEventListener('install', event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL.map(url=>new Request(url,{cache:'reload'}))))));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{
   const keys=await caches.keys();
   await Promise.all(keys.filter(k=>k.startsWith('lihps-askling-video-pwa-')&&k!==CACHE).map(k=>caches.delete(k)));

@@ -15,7 +15,7 @@
 <main>
   <header class="masthead">
     <img src="./icons/icon-192.png" alt="" width="37" height="37">
-    <span>LIHPS <b>MOTION ANGLE</b></span>
+    <span>LIHPS <b>MOTION ANGLE</b></span><small class="version">v0.2.1</small>
   </header>
   <h1>Askling H-Test</h1>
   <p class="subtitle">Video analysis</p>
@@ -32,6 +32,17 @@
     <input type="range" id="position" min="0" max="0" value="0" step="1">
     <output id="time" for="position"></output>
   </div>
+  <section class="frame-controls" id="frame-controls" aria-label="Frame review" hidden>
+    <div class="step-buttons">
+      <button id="previous-frame" class="soft">‹ Previous frame</button>
+      <button id="next-frame" class="soft">Next frame ›</button>
+    </div>
+    <div class="flag-buttons">
+      <button id="next-flag" class="soft">Next flagged frame</button>
+      <button id="mark-reviewed" class="soft" disabled>Mark reviewed</button>
+    </div>
+    <p id="flag-status" aria-live="polite"></p>
+  </section>
   <div class="toolbar">
     <div class="switch" role="group" aria-label="Preview leg">
       <button id="show-left" aria-pressed="true">Left</button>
@@ -42,11 +53,22 @@
       <button id="cw" aria-label="Rotate right 90 degrees" disabled>↷</button>
     </div>
   </div>
+  <details class="card" id="review" hidden>
+    <summary>Correct landmarks on this frame</summary>
+    <p id="correction-note">Choose a joint, then tap its position in the preview. Review affected repetitions before comparing speeds.</p>
+    <div class="switch joint-buttons">
+      <button data-joint="0" aria-pressed="false">Hip</button>
+      <button data-joint="1" aria-pressed="false">Knee</button>
+      <button data-joint="2" aria-pressed="false">Ankle</button>
+      <button id="restore">Reset frame</button>
+    </div>
+  </details>
   <label id="practice-option" class="check" hidden><input type="checkbox" id="practice"> First raise is practice for this leg</label>
+  <label id="brace-option" class="check" hidden><input type="checkbox" id="braced"> Braced knee for this leg</label>
   <button class="primary" id="process" disabled>Process both videos</button>
   <button class="soft" id="cancel" hidden>Cancel processing</button>
   <progress id="progress" hidden aria-label="Analysis progress"></progress>
-  <p id="status" role="status">Choose both clips. The videos are processed on this device.</p>
+  <p id="status" role="status">Choose one or both clips. The videos are processed on this device.</p>
   <section id="summary" class="card" hidden aria-labelledby="set-title">
     <h2 id="set-title">Set summary</h2>
     <p id="counts"></p>
@@ -60,16 +82,6 @@
     <p>Expand a raise for its measurements and quality flags.</p>
     <div id="rep-list"></div>
   </section>
-  <details class="card" id="review" hidden>
-    <summary>Correct landmarks on this frame</summary>
-    <p>Choose a joint, then tap its position in the preview. Review affected repetitions before comparing speeds.</p>
-    <div class="switch joint-buttons">
-      <button data-joint="0" aria-pressed="false">Hip</button>
-      <button data-joint="1" aria-pressed="false">Knee</button>
-      <button data-joint="2" aria-pressed="false">Ankle</button>
-      <button id="restore">Reset frame</button>
-    </div>
-  </details>
   <details class="card">
     <summary>Recording and measurement notes</summary>
     <p>Record from the tested side at hip height. Show the full leg and include at least half a second at rest before the first raise. Keep original capture timing. Select 120 or 240 fps for new recordings when available.</p>
