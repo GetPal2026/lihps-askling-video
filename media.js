@@ -14,15 +14,34 @@ export async function engine() {
   });
 }
 
-export async function openVideo(file) {
-  if (typeof VideoDecoder === 'undefined') throw new Error('Frame decoding needs WebCodecs. Try current iPhone Safari or desktop Chrome.');
-  const {Input,BlobSource,ALL_FORMATS,VideoSampleSink} = await import(CONTAINER);
-  const input = new Input({source:new BlobSource(file),formats:ALL_FORMATS});
+async function videoInput(file) {
+  const {Input,BlobSource,ALL_FORMATS}=await import(CONTAINER);
+  const input=new Input({source:new BlobSource(file),formats:ALL_FORMATS});
   try {
-    const track = await input.getPrimaryVideoTrack();
+    const track=await input.getPrimaryVideoTrack();
+    if (!track) throw new Error('The selected file has no video track.');
+    return {input,track};
+  } catch (error) {input.dispose();throw error;}
+}
+
+export async function inspectVideo(file) {
+  const {input,track}=await videoInput(file);
+  try {
+    const stats=await track.computePacketStats(256);
+    const config=await track.getDecoderConfig();
+    return {fps:stats.averagePacketRate,codec:config?.codec ?? 'unknown',
+      width:await track.getDisplayWidth(),height:await track.getDisplayHeight()};
+  } finally {input.dispose();}
+}
+
+export async function openVideo(file,software=false) {
+  if (typeof VideoDecoder === 'undefined') throw new Error('Frame decoding needs WebCodecs. Try current iPhone Safari or desktop Chrome.');
+  const {VideoSampleSink} = await import(CONTAINER);
+  const {input,track}=await videoInput(file);
+  try {
     if (!track || !(await track.canDecode())) throw new Error('This browser cannot decode the video track. Try an original H.264 MOV or MP4.');
     const start = await track.getFirstTimestamp();
-    return {input,start,sink:new VideoSampleSink(track)};
+    return {input,start,sink:new VideoSampleSink(track,software?{hardwareAcceleration:'prefer-software'}:{})};
   } catch (error) {
     input.dispose();
     throw error;
@@ -47,23 +66,27 @@ export function drawFrame(canvas,sample,turn) {
   context.restore();
 }
 
-export async function scan(file,side,turn,model,signal,update) {
-  const {input,start,sink}=await openVideo(file);
+export async function scan(file,side,turn,model,signal,update,software=false) {
+  const {input,start,sink}=await openVideo(file,software);
   signal.addEventListener('abort', dispose, {once:true});
   function dispose() { input.dispose(); }
   const canvas=document.createElement('canvas');
   const frames=[];
   const indices=side==='left'?[23,25,27]:[24,26,28];
-  let previousMs=-1;
+  let previousMs=-1,stage='decode';
   try {
     signal.throwIfAborted();
     for await (const sample of sink.samples()) {
       try {
         signal.throwIfAborted();
+        stage='draw frame';
         drawFrame(canvas,sample,turn);
         const time=sample.timestamp-start;
+        if (!Number.isFinite(time) || (frames.length && time<=frames.at(-1).time))
+          throw new Error('Source frame timestamps are missing or out of order.');
         const ms=Math.max(previousMs+1,Math.round(time*1000));
         previousMs=ms;
+        stage='pose estimation';
         const result=model.detectForVideo(canvas,ms).landmarks?.[0];
         const points=result ? indices.map(i => {
           const {x,y,visibility,presence}=result[i];
@@ -71,6 +94,7 @@ export async function scan(file,side,turn,model,signal,update) {
         }) : null;
         frames.push({time,points});
       } finally { sample.close(); }
+      stage='decode';
       if (frames.length%4===0) {
         update(frames.length,frames.at(-1).time);
         await PAUSE();
@@ -78,6 +102,9 @@ export async function scan(file,side,turn,model,signal,update) {
     }
     if (!frames.length) throw new Error('No video frames were decoded.');
     return {frames,aspect:canvas.width/canvas.height};
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw new Error(`${stage} at frame ${frames.length+1}: ${error.message || error}`);
   } finally {
     signal.removeEventListener('abort',dispose);
     input.dispose();

@@ -11,14 +11,14 @@ const length = ([x,y]) => Math.hypot(x,y);
 const mean = xs => xs.reduce((a,b) => a+b,0) / xs.length;
 const maxOf = (frames, key) => frames.reduce((best, row) => row[key] > best[key] ? row : best);
 export const fields = [
-  ['thigh', 'Thigh ROM', '°'],
-  ['thighSpeed', 'Peak thigh speed', '°/s'],
+  ['thigh', 'Hip flexion ROM', '°'],
+  ['thighSpeed', 'Peak hip flexion speed', '°/s'],
   ['kneeAtPeak', 'Knee flexion at peak', '°'],
   ['kneeMax', 'Max knee flexion', '°'],
   ['shank', 'Shank ROM', '°'],
   ['shankSpeed', 'Peak shank speed', '°/s'],
-  ['leg', 'Hip-to-ankle ROM', '°'],
-  ['legSpeed', 'Peak hip-to-ankle speed', '°/s']
+  ['leg', 'Whole-leg ROM', '°'],
+  ['legSpeed', 'Peak whole-leg speed', '°/s']
 ];
 
 function geometry(frame, aspect) {
@@ -76,7 +76,7 @@ function measure(rows,key,issues) {
   return {[key]:top[key],[key+'Speed']:issues.length || !speed ? null : speed};
 }
 
-export function analyze(frames, aspect, practice = false, braced = false, frameFlags = []) {
+export function analyze(frames, aspect, practice = false, braced = false, frameFlags = [], referenceIndex = null) {
   const empty = {suggestions:[], hz:null, flaggedFrames:0, frameCount:frames.length, reps:[],braced};
   if (frames.length < 8) return {...empty,suggestions:['Too few decoded frames.']};
   const steps = frames.slice(1).map((r,i) => r.time-frames[i].time);
@@ -84,10 +84,26 @@ export function analyze(frames, aspect, practice = false, braced = false, frameF
   const step=median(steps),hz=1/step,gap=Math.max(.04,2.5*step);
   const suggestions=hz<100?['Low decoded frame rate. Peak speeds are preliminary.']:[];
   const vectors=frames.map(frame=>geometry(frame,aspect));
-  const rest=vectors.filter((v,i)=>v && frames[i].time-frames[0].time<=.5);
+  let rest=[];
+  if (referenceIndex!==null) {
+    const chosen=vectors[referenceIndex];
+    if (chosen && (braced || chosen.thigh)) rest=[chosen];
+  } else {
+    const available=vectors.map((v,i)=>({v,i})).filter(({v,i})=>
+      v && (braced || v.thigh) && frames[i].time-frames[0].time<=.5);
+    const seed=available.filter(({i},index)=>index<5 || frames[i].time-frames[0].time<=.12).map(({v})=>v);
+    if (seed.length>=5) {
+      const heading=v=>deg(Math.atan2(-v.leg[1],Math.abs(v.leg[0])));
+      const initial=median(seed.map(heading));
+      for (const {v} of available) {
+        if (Math.abs(wrap(heading(v)-initial))>5) break;
+        rest.push(v);
+      }
+    }
+  }
   const kneeRest=rest.filter(v=>v.thigh);
   const baseRest=braced?rest:kneeRest;
-  if (baseRest.length<5) return {...empty,hz,suggestions:[...suggestions,'Could not establish a starting pose.']};
+  if (baseRest.length<(referenceIndex===null?5:1)) return {...empty,hz,suggestions:[...suggestions,'Could not establish a starting pose.']};
   const direction=Math.sign(median(baseRest.map(v=>v.leg[0])));
   const angle=([x,y])=>deg(Math.atan2(-y,x*direction));
   const kneeKeys=['thigh','shank'];
@@ -95,7 +111,7 @@ export function analyze(frames, aspect, practice = false, braced = false, frameF
   const base=Object.fromEntries(kneeKeys.map(k=>[k,median(kneeRest.map(v=>angle(v[k])))]));
   const lengths=Object.fromEntries(kneeKeys.map(k=>[k,median(kneeRest.map(v=>length(v[k])))]));
   const legLength=median(baseRest.map(v=>length(v.leg)));
-  const kneeBaseline=kneeRest.length>=5 && kneeKeys.every(k=>lengths[k]>=.025);
+  const kneeBaseline=kneeRest.length>=(referenceIndex===null?5:1) && kneeKeys.every(k=>lengths[k]>=.025);
   if (!direction || Math.abs(baseLeg)>35 || legLength<.05 || (!braced && !kneeBaseline) ||
       median(baseRest.map(v=>Math.abs(wrap(angle(v.leg)-baseLeg))))>5) {
     return {...empty,hz,suggestions:[...suggestions,'Start with the leg extended, still and approximately horizontal. Check rotation.']};
@@ -167,15 +183,37 @@ export function analyze(frames, aspect, practice = false, braced = false, frameF
   return {suggestions,hz,reps,braced,frameCount:frames.length,flaggedFrames:traces.filter(r=>!r.valid).length};
 }
 
+export function selectReps(result) {
+  const reps=result?.reps ?? [];
+  const key=result?.braced?'leg':'thigh';
+  const eligible=reps.map((rep,index)=>({rep,index}))
+    .filter(({rep})=>!rep.practice && !rep.excluded && !rep.issues.length &&
+      Number.isFinite(rep[key]) && Number.isFinite(rep[key+'Speed']));
+  const rank=(entry,metric)=>1+eligible.filter(other=>other.rep[metric]>entry.rep[metric]).length;
+  const ranked=eligible.map(entry=>({
+    ...entry,score:rank(entry,key)+rank(entry,key+'Speed')
+  })).sort((a,b)=>a.score-b.score || b.rep[key]-a.rep[key] ||
+    b.rep[key+'Speed']-a.rep[key+'Speed'] || a.index-b.index);
+  const selected=new Set(ranked.slice(0,3).map(entry=>entry.index));
+  return reps.map((rep,index)=>({
+    included:selected.has(index),
+    reason:rep.practice?'Practice':rep.excluded?'Excluded by examiner':
+      rep.issues.length || !Number.isFinite(rep[key+'Speed'])?'QC excluded':
+      selected.has(index)?'Selected':'Below best three',
+    rank:ranked.findIndex(entry=>entry.index===index)+1 || null
+  }));
+}
+
 export function summarize(result) {
-  const accepted = result?.reps.filter(r => !r.practice && !r.issues.length) ?? [];
+  const selection=selectReps(result);
+  const accepted=result?.reps.filter((rep,index)=>selection[index].included) ?? [];
   const counts={};
   const metrics=Object.fromEntries(fields.map(([key])=>{
     const values=accepted.map(r=>r[key]).filter(Number.isFinite);
     counts[key]=values.length;
     return [key,values.length?mean(values):null];
   }));
-  return {count:accepted.length,metrics,counts};
+  return {count:accepted.length,metrics,counts,selection};
 }
 
 export function ratio(left,right) {

@@ -8,21 +8,32 @@
   <title>Askling H-Test · LIHPS Motion Angle</title>
   <link rel="stylesheet" href="./style.css">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="apple-touch-icon" href="./icons/icon-180.png">
+  <link rel="apple-touch-icon" href="./icons/askling-video-180.png">
   <script type="module" src="./app.js"></script>
 </head>
 <body>
 <main>
   <header class="masthead">
-    <img src="./icons/icon-192.png" alt="" width="37" height="37">
-    <span>LIHPS <b>MOTION ANGLE</b></span><small class="version">v0.2.1</small>
+    <img src="./icons/askling-video-192.png" alt="" width="37" height="37">
+    <span>LIHPS <b>MOTION ANGLE</b></span><small class="version">v0.3.0</small>
   </header>
   <h1>Askling H-Test</h1>
   <p class="subtitle">Video analysis</p>
   <section aria-label="Video inputs" class="inputs">
-    <label class="clip"><b>Left video</b><span id="left-name">Choose MOV or MP4</span><input id="left" type="file" accept="video/*,.mov,.mp4"></label>
-    <label class="clip"><b>Right video</b><span id="right-name">Choose MOV or MP4</span><input id="right" type="file" accept="video/*,.mov,.mp4"></label>
+    <label class="clip"><b>Left video</b><span id="left-name">Choose MOV or MP4</span><span id="left-meta" class="clip-meta"></span><input id="left" type="file" accept="video/*,.mov,.mp4"></label>
+    <label class="clip"><b>Right video</b><span id="right-name">Choose MOV or MP4</span><span id="right-meta" class="clip-meta"></span><input id="right" type="file" accept="video/*,.mov,.mp4"></label>
   </section>
+  <details class="card" id="timing-options" hidden>
+    <summary>Video timing for the selected leg</summary>
+    <p id="timing-info"></p>
+    <label class="field">Analysis time basis
+      <select id="time-basis"><option value="file">Use file timestamps</option><option value="capture">Use confirmed capture fps</option></select>
+    </label>
+    <label class="field" id="capture-field" hidden>Confirmed capture fps
+      <input id="capture-fps" type="number" min="1" max="1000" step="0.01" value="120">
+    </label>
+    <p>File timing is checked on import and again after decoding. Capture fps can differ after a slow-motion export. Use a confirmed capture rate only when every captured frame is retained in order. It cannot restore frames removed by export.</p>
+  </details>
   <div class="viewer" id="viewer">
     <p id="placeholder">Select a clip to preview</p>
     <canvas id="preview" hidden aria-label="Video frame and hip, knee and ankle overlay"></canvas>
@@ -41,6 +52,9 @@
       <button id="next-flag" class="soft">Next flagged frame</button>
       <button id="mark-reviewed" class="soft" disabled>Mark reviewed</button>
     </div>
+    <button class="soft" id="set-reference">Use this frame as resting reference</button>
+    <button class="soft" id="auto-reference">Use automatic resting reference</button>
+    <p id="reference-status"></p>
     <p id="flag-status" aria-live="polite"></p>
   </section>
   <div class="toolbar">
@@ -65,6 +79,10 @@
   </details>
   <label id="practice-option" class="check" hidden><input type="checkbox" id="practice"> First raise is practice for this leg</label>
   <label id="brace-option" class="check" hidden><input type="checkbox" id="braced"> Braced knee for this leg</label>
+  <div class="card" id="correction-actions" hidden>
+    <button class="primary" id="apply-corrections" disabled>Recalculate with corrections</button>
+    <p id="correction-status" role="status"></p>
+  </div>
   <button class="primary" id="process" disabled>Process both videos</button>
   <button class="soft" id="cancel" hidden>Cancel processing</button>
   <progress id="progress" hidden aria-label="Analysis progress"></progress>
@@ -72,10 +90,13 @@
   <section id="summary" class="card" hidden aria-labelledby="set-title">
     <h2 id="set-title">Set summary</h2>
     <p id="counts"></p>
+    <p>Best three eligible raises by combined ROM and peak-speed rank, with equal weight. Hip metrics determine ranking in unbraced mode and whole-leg metrics in braced mode.</p>
+    <p id="calculation-state"></p>
     <div id="summary-table"></div>
     <p>L/R = Left ÷ Right × 100</p>
     <p id="quality"></p>
     <button class="soft" id="export">Export repetition CSV</button>
+    <button class="soft" id="export-frames">Export frame data</button>
   </section>
   <section class="card" id="repetitions" hidden aria-labelledby="rep-title">
     <h2 id="rep-title">Per repetition</h2>
@@ -85,7 +106,7 @@
   <details class="card">
     <summary>Recording and measurement notes</summary>
     <p>Record from the tested side at hip height. Show the full leg and include at least half a second at rest before the first raise. Keep original capture timing. Select 120 or 240 fps for new recordings when available.</p>
-    <p>Thigh ROM measures hip-to-knee elevation relative to rest. Knee flexion comes from the hip, knee and ankle in the image. Shank ROM and speed are the closest video comparison when the IMU is mounted on the shin. Quality checks flag detectable tracking problems. Review the overlay to catch misplaced joints.</p>
+    <p>Hip flexion ROM measures hip-to-knee elevation relative to rest. Knee flexion comes from the hip, knee and ankle in the image. Shank ROM and speed are the closest video comparison when the IMU is mounted on the shin. Quality checks flag detectable tracking problems. Review the overlay to catch misplaced joints.</p>
     <p>Velocity depends on the recorded frame timing and smoothing. This prototype reports 2D measurements for review.</p>
     <button class="soft" id="prepare">Prepare for offline use</button>
   </details>

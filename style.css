@@ -45,3 +45,7 @@ th:first-child,td:first-child{text-align:left}
 .frame-controls p{font-size:.79rem;margin:5px 0 7px}
 .scrub output{min-width:7em}
 .version{margin-left:auto;color:var(--muted);letter-spacing:normal}
+.field{display:grid;gap:6px;margin:8px 0;font-size:.86rem}
+.field select,.field input{min-height:44px;width:100%;font:inherit;border:1px solid var(--line);border-radius:8px;background:white;color:inherit;padding:6px}
+.clip .clip-meta{white-space:normal;overflow:visible;font-size:.7rem}
+#calculation-state{color:#086b92}

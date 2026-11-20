@@ -1,12 +1,13 @@
-import {analyze,fields,median,ratio,summarize} from './metrics.js';
+import {fields,median,ratio,summarize} from './metrics.js';
 import {flagFrames,flagSignature,nextGroup,reviewGroups} from './review.js';
-import {drawFrame,engine,openVideo,scan} from './media.js';
+import {calculate,preserveEdits,timedFrames} from './analysis.js';
+import {drawFrame,engine,inspectVideo,openVideo,scan} from './media.js';
 
 const $ = id => document.getElementById(id);
 const sides = ['left','right'];
 const title = side => side[0].toUpperCase()+side.slice(1);
 const newClip = file => ({file,turn:0,practice:false,braced:false,index:0,
-  flags:[],reviewed:new Map()});
+  flags:[],reviewed:new Map(),excluded:new Set(),dirty:false,revision:0,captureFps:null,referenceIndex:null});
 const state = Object.fromEntries(sides.map(side => [side,newClip()]));
 const canvas=$('preview');
 let selected='left', active=null, previewRequest=0, joint=null;
@@ -44,6 +45,13 @@ function controls() {
   $('brace-option').hidden=!clip.file;
   $('braced').disabled=!!active;
   $('braced').checked=clip.braced;
+  $('timing-options').hidden=!clip.file;
+  $('time-basis').disabled=$('capture-fps').disabled=!!active;
+  $('time-basis').value=clip.captureFps===null?'file':'capture';
+  $('capture-field').hidden=clip.captureFps===null;
+  if (clip.captureFps!==null) $('capture-fps').value=clip.captureFps;
+  updateTiming();
+  updateCorrections();
   $('review').hidden=!clip.data || !!active;
   if ($('review').hidden) $('review').open=false;
   $('scrub').hidden=!clip.data || !!active;
@@ -70,6 +78,58 @@ function updateReview(clip) {
     : acknowledged?' This frame was marked reviewed.':'';
   $('flag-status').textContent=count+current;
   $('restore').disabled=!clip.data?.frames[clip.index]?.edited || !!active;
+  $('set-reference').disabled=!clip.data || !!active;
+  $('auto-reference').disabled=clip.referenceIndex===null || !!active;
+  $('reference-status').textContent=clip.referenceIndex===null?'Resting reference: automatic stable start.':
+    `Resting reference: frame ${clip.referenceIndex+1}. Recalculate after changing it.`;
+}
+
+function updateTiming() {
+  for (const side of sides) {
+    const clip=state[side];
+    const fileFps=clip.metadata?.fps;
+    const decoded=clip.data?.hz;
+    $(side+'-meta').textContent=clip.error ? clip.error :
+      clip.file ? `File timing ${num(fileFps,' fps')}${decoded?' · Decoded '+num(decoded,' fps'):''}`:'';
+  }
+  const clip=state[selected];
+  $('timing-info').textContent=`${title(selected)} · File timing ${num(clip.metadata?.fps,' fps')} (sampled timestamps).
+    ${clip.data?'Decoded '+num(clip.data.hz,' fps')+'. ':''}
+    ${clip.captureFps===null?'Using source timestamps.':'Using confirmed '+num(clip.captureFps,' fps')+' for analysis.'}`;
+}
+
+function updateCorrections() {
+  const messages=sides.filter(side=>state[side].result).map(side=>{
+    const clip=state[side];
+    const applied=clip.result.correctedFrames ?? 0;
+    return `${title(side)} · revision ${clip.revision} · ${applied} corrected frames applied${clip.dirty?' · changes pending recalculation':''}.`;
+  });
+  $('calculation-state').textContent=messages.join(' ');
+  const clip=state[selected];
+  const edited=clip.data?.frames.filter(frame=>frame.edited).length ?? 0;
+  $('correction-status').textContent=clip.dirty
+    ? `${edited} corrected frames in this clip. Recalculate to apply current edits and timing settings.`
+    : clip.result ? `Revision ${clip.revision}: ${clip.result.correctedFrames} corrected frames included in these results.`:'';
+  $('correction-actions').hidden=!clip.data || !!active;
+  $('apply-corrections').disabled=!clip.data || !clip.dirty || !!active;
+  $('export-frames').disabled=$('export').disabled=sides.some(side=>state[side].dirty) || !!active;
+}
+
+function refreshFlags(side) {
+  const clip=state[side];
+  if (!clip.data) return;
+  const frames=timedFrames(clip.data,clip.captureFps);
+  const hz=clip.captureFps ?? clip.data.hz;
+  clip.flags=flagFrames(frames,clip.data.aspect,clip.braced,hz);
+  if (side===selected) updateReview(clip);
+}
+
+function pending(side) {
+  const clip=state[side];
+  if (!clip.data) return;
+  clip.dirty=true;
+  refreshFlags(side);
+  updateCorrections();
 }
 
 function overlay(points) {
@@ -171,18 +231,22 @@ function table(container,head,rows) {
 function recalculate(side) {
   const clip=state[side];
   if (!clip.data) return;
-  const {frames,aspect}=clip.data;
-  clip.flags=flagFrames(frames,aspect,clip.braced,clip.data.hz);
-  const result=analyze(frames,aspect,clip.practice,clip.braced,clip.flags);
+  const {result,flags}=calculate(clip.data,{practice:clip.practice,braced:clip.braced,
+    captureFps:clip.captureFps,excluded:[...clip.excluded],referenceIndex:clip.referenceIndex});
+  clip.flags=flags;
   clip.result=result;
+  clip.revision++;
+  clip.dirty=false;
   if (side===selected) updateReview(clip);
+  updateCorrections();
 }
 
 function renderResults() {
   $('summary').hidden=$('repetitions').hidden=!sides.some(s=>state[s].result);
+  updateCorrections();
   if ($('summary').hidden) return;
   const [l,r]=sides.map(s=>summarize(state[s].result));
-  $('counts').textContent=`Mean of usable scored raises · Left ${l.count} · Right ${r.count}`;
+  $('counts').textContent=`Mean of selected raises · Left ${l.count} · Right ${r.count}`;
   const formatMetric=(summary,key,unit)=>{
     const value=num(summary.metrics[key],unit);
     const n=summary.counts[key];
@@ -196,7 +260,7 @@ function renderResults() {
     const result=state[s].result;
     if (!result) return [];
     const extra=[...result.suggestions];
-    if (result.reps.filter(r=>!r.practice).length!==3) extra.push('Check the detected rep count.');
+    if (result.reps.filter(r=>!r.practice).length<3) extra.push('Fewer than three scored raises detected.');
     if (result.braced) extra.push('Braced mode uses hip-to-ankle elevation to detect raises and select the preview peak.');
     const flags=state[s].flags.filter(list=>list.length).length;
     if (flags) extra.push(`${flags} frames flagged for review.`);
@@ -214,6 +278,7 @@ function renderResults() {
     if (!result.reps.length) {
       const note=document.createElement('p');note.textContent='No raises detected.';list.append(note);
     }
+    const selection=summarize(result).selection;
     let scored=0;
     for (const [i,rep] of result.reps.entries()) {
       const details=document.createElement('details');
@@ -222,10 +287,10 @@ function renderResults() {
       const label=rep.practice?'Practice':`Raise ${++scored}`;
       const key=result.braced?'leg':'thigh';
       const trackIssues=[...rep.issues,...rep.kneeIssues];
-      summary.textContent=`${label} · ${num(rep[key],'°')} · ${num(rep[key+'Speed'],'°/s')}${trackIssues.length?' · Check tracking':''}`;
+      summary.textContent=`${label} · ${selection[i].reason} · ${num(rep[key],'°')} · ${num(rep[key+'Speed'],'°/s')}${trackIssues.length?' · Check tracking':''}`;
       function showPeak() {
         const frames=state[side].data.frames;
-        const index=frames.findIndex(r=>r.time===rep.peakTime);
+        const index=frames.findIndex(r=>r.time===rep.sourcePeakTime);
         choose(side,Math.max(0,index));
       }
       const values=document.createElement('div');
@@ -236,14 +301,28 @@ function renderResults() {
       const peak=document.createElement('button');
       peak.className='soft';peak.textContent='Show peak frame';
       peak.addEventListener('click',()=>{showPeak();$('viewer').scrollIntoView({block:'center'});});
-      details.append(summary,values,qc,peak);
+      const exclude=document.createElement('input');
+      exclude.type='checkbox';exclude.checked=!!rep.excluded;exclude.disabled=!!active || state[side].dirty;
+      exclude.addEventListener('change',()=>{
+        if (exclude.checked) state[side].excluded.add(rep.sourceStartTime);
+        else state[side].excluded.delete(rep.sourceStartTime);
+        if (state[side].dirty) {
+          report('Recalculate pending landmark and timing changes before selecting repetitions.',true);
+          return;
+        }
+        recalculate(side);renderResults();
+      });
+      const exclusion=document.createElement('label');
+      exclusion.className='check';
+      exclusion.append(exclude,document.createTextNode('Exclude from set'));
+      details.append(summary,values,qc,peak,exclusion);
       list.append(details);
     }
   }
 }
 
 for (const side of sides) {
-  $(side).addEventListener('change',()=>{
+  $(side).addEventListener('change',async()=>{
     const file=$(side).files[0];
     if (!file) return;
     closePreview();
@@ -251,6 +330,16 @@ for (const side of sides) {
     $(side+'-name').textContent=file.name;
     report(sides.every(s=>state[s].file)?'Check each preview, then process both videos.':`Check the preview, then process the ${side} video. You can also add the other leg.`);
     renderResults();choose(side);
+    const clip=state[side];
+    try {
+      const metadata=await inspectVideo(file);
+      if (state[side]!==clip) return;
+      clip.metadata=metadata;
+    } catch(error) {
+      if (state[side]!==clip) return;
+      clip.error='Could not inspect file: '+error.message;
+    }
+    updateTiming();
   });
   $('show-'+side).addEventListener('click',()=>choose(side));
 }
@@ -258,7 +347,7 @@ for (const [id,angle] of [['ccw',270],['cw',90]]) {
   $(id).addEventListener('click',()=>{
     const clip=state[selected];
     clip.turn=(clip.turn+angle)%360;
-    clip.data=null;clip.result=null;clip.index=0;clip.flags=[];clip.reviewed.clear();
+    clip.data=null;clip.result=null;clip.index=0;clip.flags=[];clip.reviewed.clear();clip.dirty=false;clip.excluded.clear();clip.error=null;clip.referenceIndex=null;
     report('Rotation updated. Process the selected videos to update measurements.');
     renderResults();choose(selected);
   });
@@ -283,17 +372,44 @@ $('mark-reviewed').addEventListener('click',()=>{
   for (let i=group.start;i<=group.end;i++) clip.reviewed.set(i,flagSignature(clip.flags[i]));
   updateReview(clip);
 });
+$('set-reference').addEventListener('click',()=>{
+  state[selected].referenceIndex=state[selected].index;
+  pending(selected);controls();
+});
+$('auto-reference').addEventListener('click',()=>{
+  state[selected].referenceIndex=null;
+  pending(selected);controls();
+});
 $('braced').addEventListener('change',()=>{
   const clip=state[selected];
   clip.braced=$('braced').checked;
   clip.reviewed.clear();
-  recalculate(selected);
+  pending(selected);
   renderResults();
 });
 $('practice').addEventListener('change',()=>{
   state[selected].practice=$('practice').checked;
-  recalculate(selected);renderResults();
+  pending(selected);renderResults();
 });
+$('apply-corrections').addEventListener('click',()=>{
+  try {
+    recalculate(selected);renderResults();controls();
+    report(`${title(selected)} results recalculated from current landmarks. Revision ${state[selected].revision}.`);
+  } catch(error) {report(error.message,true);}
+});
+function changeTiming() {
+  const clip=state[selected];
+  const value=$('time-basis').value==='capture'?Number($('capture-fps').value):null;
+  if (value!==null && (!Number.isFinite(value) || value<1 || value>1000)) {
+    report('Enter a capture rate between 1 and 1000 fps.',true);
+    return;
+  }
+  clip.captureFps=value;
+  controls();
+  pending(selected);
+}
+$('time-basis').addEventListener('change',changeTiming);
+$('capture-fps').addEventListener('change',changeTiming);
 $('prepare').addEventListener('click',async()=>{
   if (active || preparing) return;
   preparing=true;controls();
@@ -317,27 +433,52 @@ $('process').addEventListener('click',async()=>{
   void preview();
   $('progress').removeAttribute('value');
   report('Loading MediaPipe Full…');
-  for (const side of available) {
-    const clip=state[side];clip.data=null;clip.result=null;clip.index=0;clip.flags=[];clip.reviewed.clear();
-  }
+  for (const side of available) state[side].error=null;
   renderResults();
+  const failures=[];
+  let completed=0;
   try {
     for (const side of available) {
       signal.throwIfAborted();
       const clip=state[side];
-      const model=await engine();
+      let data,lastError;
+      for (const software of [false,true]) {
+        let model;
+        try {
+          report(`${title(side)} · ${software?'Retrying with software decoding…':'Loading pose model…'}`);
+          model=await engine();
+          data=await scan(clip.file,side,clip.turn,model,signal,(count,time)=>
+            report(`${title(side)} · ${count} frames · ${time.toFixed(1)} s of video`),software);
+          break;
+        } catch(error) {
+          signal.throwIfAborted();
+          lastError=error;
+        } finally {model?.close();}
+      }
+      if (!data) {
+        clip.error=`${title(side)} processing failed · ${lastError?.message ?? 'No frames returned'}`;
+        failures.push(clip.error);
+        updateTiming();
+        continue;
+      }
+      signal.throwIfAborted();
+      const intervals=data.frames.slice(1).map((row,i)=>row.time-data.frames[i].time);
+      const step=median(intervals);
+      const next=preserveEdits(clip.data,{...data,hz:step>0?1/step:null});
+      const previous=clip.data;
+      clip.data=next;
       try {
-        const data=await scan(clip.file,side,clip.turn,model,signal,(count,time) =>
-          report(`${title(side)} · ${count} frames · ${time.toFixed(1)} s of video`));
-        signal.throwIfAborted();
-        const intervals=data.frames.slice(1).map((row,i)=>row.time-data.frames[i].time);
-        const step=median(intervals);
-        clip.data={...data,hz:step>0?1/step:null};
         recalculate(side);
-      } finally {model.close();}
+        completed++;
+      } catch(error) {
+        clip.data=previous;
+        clip.error=`${title(side)} measurement failed · ${error.message}`;
+        failures.push(clip.error);
+      }
     }
-    report(available.length===2 ? 'Both videos processed. Review the overlay before using the measurements.' : `${title(available[0])} video processed. Review the overlay before using the measurements.`);
-  } catch (error) {
+    report(failures.length ? failures.join(' · ') :
+      `${completed===2?'Both videos':title(available[0])+' video'} processed. Review the overlay before using the measurements.`,!!failures.length);
+  } catch(error) {
     report(signal.aborted?'Processing stopped. Completed clips can still be reviewed.':error.message,!signal.aborted);
   } finally {
     active=null;
@@ -364,22 +505,24 @@ canvas.addEventListener('click',event=>{
   frame.points[joint]={x:(event.clientX-rect.left)/rect.width,y:(event.clientY-rect.top)/rect.height,score:1};
   frame.edited=true;
   clip.reviewed.delete(viewed.index);
-  recalculate(viewed.side);renderResults();void preview();
+  pending(viewed.side);renderResults();void preview();
 });
 $('restore').addEventListener('click',()=>{
   const clip=state[selected], frame=clip.data?.frames[clip.index];
   if (!frame?.edited) return;
   frame.points=frame.original;delete frame.original;delete frame.edited;
   clip.reviewed.delete(clip.index);
-  recalculate(selected);renderResults();void preview();
+  pending(selected);renderResults();void preview();
 });
 $('export').addEventListener('click',()=>{
-  const rows=[['side','raise','practice','braced_knee','peak_time_s','peak_frame_basis',...fields.map(([key,,unit])=>key+(unit==='°/s'?'_deg_per_s':'_deg')),'qc','knee_tracking_qc','manual_edits','decoded_fps']];
+  if (sides.some(side=>state[side].dirty)) return;
+  const rows=[['side','raise','included_in_summary','selection_reason','selection_rank','practice','braced_knee','peak_time_s','peak_frame_basis',...fields.map(([key,,unit])=>key+(unit==='°/s'?'_deg_per_s':'_deg')),'qc','knee_tracking_qc','manual_edits','corrected_frames_applied','calculation_revision','file_timing_fps','decoded_fps','analysis_fps','timing_basis']];
   for (const side of sides) {
     const result=state[side].result;
+    const selection=summarize(result).selection;
     result?.reps.forEach((r,i)=>rows.push([
-      side,i+1,r.practice,result.braced,r.peakTime,result.braced?'hip-to-ankle':'thigh',
-      ...fields.map(([key])=>r[key]),r.issues.join(' · '),r.kneeIssues.join(' · '),!!r.edited,result.hz
+      side,i+1,selection[i].included,selection[i].reason,selection[i].rank,r.practice,result.braced,r.peakTime,result.braced?'hip-to-ankle':'thigh',
+      ...fields.map(([key])=>r[key]),r.issues.join(' · '),r.kneeIssues.join(' · '),!!r.edited,result.correctedFrames,state[side].revision,state[side].metadata?.fps,state[side].data?.hz,result.hz,result.captureFps===null?'file timestamps':'confirmed capture fps'
     ]));
   }
   const csv=rows.map(row=>row.map(value=>'"'+String(value??'').replaceAll('"','""')+'"').join(',')).join('\r\n');
@@ -389,3 +532,17 @@ $('export').addEventListener('click',()=>{
 });
 if ('serviceWorker' in navigator && isSecureContext) navigator.serviceWorker.register('./sw.js').catch(()=>{});
 controls();
+
+// Frame data supports review of applied edits and quality flags.
+$('export-frames').addEventListener('click',()=>{
+  if (sides.some(side=>state[side].dirty)) return;
+  const payload=Object.fromEntries(sides.filter(side=>state[side].data).map(side=>{
+    const clip=state[side];
+    return [side,{fileName:clip.file.name,data:clip.data,metadata:clip.metadata,result:clip.result,
+      flags:clip.flags,revision:clip.revision}];
+  }));
+  const url=URL.createObjectURL(new Blob([JSON.stringify(payload)],{type:'application/json'}));
+  const link=document.createElement('a');
+  link.href=url;link.download='lihps-frame-data.json';link.click();
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
+});
