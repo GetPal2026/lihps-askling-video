@@ -1,4 +1,5 @@
 import {analyze,median} from './metrics.js';
+import {applyBraceEdits} from './brace.js';
 import {flagFrames} from './review.js';
 
 export function timedFrames(data,captureFps=null) {
@@ -9,8 +10,8 @@ export function timedFrames(data,captureFps=null) {
   }));
 }
 
-export function calculate(data,{practice=false,braced=false,captureFps=null,excluded=[],referenceIndex=null}={}) {
-  const frames=timedFrames(data,captureFps);
+export function calculate(data,{practice=false,braced=false,captureFps=null,excluded=[],referenceIndex=null,propagate=false}={}) {
+  const frames=applyBraceEdits(timedFrames(data,captureFps),data.aspect,!!data.braceSeed && propagate);
   const step=median(frames.slice(1).map((frame,i)=>frame.time-frames[i].time));
   const flags=flagFrames(frames,data.aspect,braced,step>0?1/step:null);
   const result=analyze(frames,data.aspect,practice,braced,flags,referenceIndex);
@@ -23,7 +24,9 @@ export function calculate(data,{practice=false,braced=false,captureFps=null,excl
   result.correctedFrames=data.frames.filter(frame=>frame.edited).length;
   result.captureFps=captureFps;
   result.referenceIndex=referenceIndex;
-  return {result,flags};
+  result.propagatedFrames=frames.filter(frame=>frame.propagated).length;
+  result.braceAssisted=!!data.braceSeed;
+  return {result,flags,frames};
 }
 
 // Match edits by source timestamp so a fresh model pass preserves examiner work.
@@ -31,7 +34,10 @@ export function preserveEdits(previous,next) {
   const edits=new Map(previous?.frames.filter(frame=>frame.edited).map(frame=>[frame.time,frame]) ?? []);
   next.frames=next.frames.map(frame=>{
     const edited=edits.get(frame.time);
-    return edited ? {...frame,original:frame.points,points:structuredClone(edited.points),edited:true} : frame;
+    if (!edited) return frame;
+    const points=edited.manualJoints ? (frame.points ?? [null,null,null]).map((point,joint)=>
+      edited.manualJoints.includes(joint)?edited.points[joint]:point) : edited.points;
+    return {...frame,original:frame.points,points:structuredClone(points),edited:true,manualJoints:edited.manualJoints};
   });
   return next;
 }

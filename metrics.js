@@ -163,7 +163,7 @@ export function analyze(frames, aspect, practice = false, braced = false, frameF
       estimated.kneeMax=maxOf(kneeWindow.filter(r=>r.valid),'knee').knee;
     }
     reps.push({...estimated,peakTime:peak.time,start:window[0].time,end:window.at(-1).time,
-      practice:practice && reps.length===0,issues,kneeIssues,edited:window.some(r=>r.edited)});
+      practice:practice && reps.length===0,issues,kneeIssues,edited:window.some(r=>r.edited || r.propagated)});
   }
   traces.forEach((r,i) => {
     if (!r.valid) return;

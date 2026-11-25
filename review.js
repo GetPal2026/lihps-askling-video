@@ -35,7 +35,13 @@ export function flagFrames(frames,aspect,braced,fps) {
   for (const [i,frame] of frames.entries()) {
     const before=frames[i-1],after=frames[i+1];
     if (before && frame.time-before.time>gap) add(i,'Gap in video timestamps');
+    if (braced && (frame.tracking==='lost' || frame.tracking==='disagreement') &&
+        !(usable(frame.points?.[0]) && usable(frame.points?.[2]))) {
+      add(i,frame.tracking==='lost'?'Brace tracking lost':'Forward and backward brace tracks disagree');
+      continue;
+    }
     for (const [j,name] of joints.entries()) {
+      if (braced && j===1 && frame.tracking && !usable(frame.points?.[1])) continue;
       const point=frame.points?.[j];
       const knee=braced && j===1;
       if (!usable(point)) {

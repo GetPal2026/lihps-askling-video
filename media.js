@@ -1,3 +1,4 @@
+import {seedBrace,startBraceTrack} from './brace.js';
 const VISION = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32';
 const CONTAINER = 'https://cdn.jsdelivr.net/npm/mediabunny@1.65.2/+esm';
 const MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
@@ -66,13 +67,25 @@ export function drawFrame(canvas,sample,turn) {
   context.restore();
 }
 
-export async function scan(file,side,turn,model,signal,update,software=false) {
+export function braceImage(canvas,scratch) {
+  const scale=Math.min(1,320/Math.max(canvas.width,canvas.height));
+  scratch.width=Math.round(canvas.width*scale);
+  scratch.height=Math.round(canvas.height*scale);
+  const context=scratch.getContext('2d',{willReadFrequently:true});
+  context.drawImage(canvas,0,0,scratch.width,scratch.height);
+  return context.getImageData(0,0,scratch.width,scratch.height);
+}
+
+export async function scan(file,side,turn,model,signal,update,software=false,braceSeed=null) {
   const {input,start,sink}=await openVideo(file,software);
   signal.addEventListener('abort', dispose, {once:true});
   function dispose() { input.dispose(); }
   const canvas=document.createElement('canvas');
+  const scratch=braceSeed?document.createElement('canvas'):null;
   const frames=[];
-  const indices=side==='left'?[23,25,27]:[24,26,28];
+  let braceTrack=null;
+  const limbs=[[23,25,27],[24,26,28]];
+  const indices=limbs[side==='left'?0:1];
   let previousMs=-1,stage='decode';
   try {
     signal.throwIfAborted();
@@ -88,11 +101,17 @@ export async function scan(file,side,turn,model,signal,update,software=false) {
         previousMs=ms;
         stage='pose estimation';
         const result=model.detectForVideo(canvas,ms).landmarks?.[0];
-        const points=result ? indices.map(i => {
+        const read=ids=>result ? ids.map(i => {
           const {x,y,visibility,presence}=result[i];
           return {x,y,score:Math.min(visibility ?? 1,presence ?? 1)};
         }) : null;
-        frames.push({time,points});
+        if (braceSeed) {
+          stage='brace tracking';
+          const image=braceImage(canvas,scratch);
+          braceTrack ??= startBraceTrack(seedBrace(image,braceSeed),canvas.width/canvas.height);
+          braceTrack.add({time},image,limbs.map(read));
+          frames.push({time});
+        } else frames.push({time,points:read(indices)});
       } finally { sample.close(); }
       stage='decode';
       if (frames.length%4===0) {
@@ -101,7 +120,11 @@ export async function scan(file,side,turn,model,signal,update,software=false) {
       }
     }
     if (!frames.length) throw new Error('No video frames were decoded.');
-    return {frames,aspect:canvas.width/canvas.height};
+    stage='checking brace track backwards';
+    const verified=braceTrack ? await braceTrack.finish(signal,PAUSE,(n,total)=>update(n,total,'verify')) : frames;
+    if (braceTrack && !verified.some(frame=>frame.points))
+      throw new Error('Could not follow the brace. Try selecting a well-lit panel near the middle of the brace.');
+    return {frames:verified,aspect:canvas.width/canvas.height,braceSeed};
   } catch (error) {
     if (signal.aborted) throw error;
     throw new Error(`${stage} at frame ${frames.length+1}: ${error.message || error}`);

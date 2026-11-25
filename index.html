@@ -15,7 +15,7 @@
 <main>
   <header class="masthead">
     <img src="./icons/askling-video-192.png" alt="" width="37" height="37">
-    <span>LIHPS <b>MOTION ANGLE</b></span><small class="version">v0.3.0</small>
+    <span>LIHPS <b>MOTION ANGLE</b></span><small class="version">v0.4.0</small>
   </header>
   <h1>Askling H-Test</h1>
   <p class="subtitle">Video analysis</p>
@@ -34,6 +34,7 @@
     </label>
     <p>File timing is checked on import and again after decoding. Capture fps can differ after a slow-motion export. Use a confirmed capture rate only when every captured frame is retained in order. It cannot restore frames removed by export.</p>
   </details>
+  <p id="brace-prompt" role="status" hidden></p>
   <div class="viewer" id="viewer">
     <p id="placeholder">Select a clip to preview</p>
     <canvas id="preview" hidden aria-label="Video frame and hip, knee and ankle overlay"></canvas>
@@ -79,7 +80,14 @@
   </details>
   <label id="practice-option" class="check" hidden><input type="checkbox" id="practice"> First raise is practice for this leg</label>
   <label id="brace-option" class="check" hidden><input type="checkbox" id="braced"> Braced knee for this leg</label>
+  <section class="card" id="brace-guide" aria-label="Brace tracking" hidden>
+    <b>Brace-assisted tracking</b>
+    <p id="brace-status">Mark the hip, ankle and a solid padded panel on the first resting frame.</p>
+    <button class="soft" id="seed-brace">Place brace guide</button>
+    <button class="soft" id="clear-brace" hidden>Remove guide</button>
+  </section>
   <div class="card" id="correction-actions" hidden>
+    <label class="check" id="propagate-option" hidden><input type="checkbox" id="propagate"> Apply hip and ankle corrections to nearby tracked frames</label>
     <button class="primary" id="apply-corrections" disabled>Recalculate with corrections</button>
     <p id="correction-status" role="status"></p>
   </div>
@@ -95,6 +103,7 @@
     <div id="summary-table"></div>
     <p>L/R = Left ÷ Right × 100</p>
     <p id="quality"></p>
+    <p id="brace-summary" hidden></p>
     <button class="soft" id="export">Export repetition CSV</button>
     <button class="soft" id="export-frames">Export frame data</button>
   </section>
