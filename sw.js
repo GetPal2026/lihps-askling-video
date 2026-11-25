@@ -1,5 +1,5 @@
 const PREFIX='lihps-askling-video-pwa-'+self.registration.scope+'-';
-const CACHE=PREFIX+'0040';
+const CACHE=PREFIX+'0041';
 const SHELL=['./','./index.html','./app.js','./metrics.js','./analysis.js','./review.js','./media.js','./brace.js','./style.css','./manifest.webmanifest',
   './icons/askling-video-180.png','./icons/askling-video-192.png','./icons/askling-video-512.png','./icons/askling-video-maskable-512.png'];
 self.addEventListener('install', event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL.map(url=>new Request(url,{cache:'reload'}))))));

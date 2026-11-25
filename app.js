@@ -9,7 +9,7 @@ const sides = ['left','right'];
 const title = side => side[0].toUpperCase()+side.slice(1);
 const newClip = file => ({file,turn:0,practice:false,braced:false,index:0,
   flags:[],reviewed:new Map(),excluded:new Set(),dirty:false,revision:0,captureFps:null,referenceIndex:null,
-  braceSeed:null,propagate:false});
+  braceSeed:null,poseOnly:false,propagate:false});
 const state = Object.fromEntries(sides.map(side => [side,newClip()]));
 const canvas=$('preview');
 let selected='left', active=null, previewRequest=0, joint=null;
@@ -30,6 +30,7 @@ function closePreview() {
 }
 
 const activeSeed=clip=>clip.braced ? clip.braceSeed : null;
+const requiresGuide=clip=>clip.braced && !clip.braceSeed && !clip.poseOnly;
 const needsProcessing=clip=>!!clip.data && (clip.data.braceSeed ?? null)!==activeSeed(clip);
 const guideSteps=[['hip','Tap the centre of the tested hip.'],['ankle','Tap the centre of the tested ankle.'],
   ['panel','Tap the middle of a solid brace panel, away from the straps and table.']];
@@ -43,8 +44,12 @@ function updateGuide(clip) {
   $('seed-brace').textContent=placing?'Cancel guide':clip.braceSeed?'Replace brace guide':'Place brace guide';
   $('clear-brace').hidden=!clip.braceSeed || placing;
   $('clear-brace').disabled=!!active;
+  $('pose-only-option').hidden=!!clip.braceSeed || placing;
+  $('pose-only').disabled=!!active;
+  $('pose-only').checked=clip.poseOnly;
   $('brace-status').textContent=clip.braceSeed
     ? 'Guide placed. Processing follows the brace and estimates the hip-to-ankle line.'
+    : clip.poseOnly ? 'This clip will use pose detection with braced-knee quality checks.'
     : 'On the first resting frame, mark the hip, ankle and a padded brace panel.';
   $('propagate-option').hidden=!clip.data?.braceSeed;
   $('propagate').checked=clip.propagate;
@@ -116,8 +121,11 @@ function updateTiming() {
     const clip=state[side];
     const fileFps=clip.metadata?.fps;
     const decoded=clip.data?.hz;
+    const tracking=clip.braced
+      ? activeSeed(clip) ? ' · Brace guide ready' : clip.poseOnly ? ' · Pose only' : ' · Guide needed'
+      : '';
     $(side+'-meta').textContent=clip.error ? clip.error :
-      clip.file ? `File timing ${num(fileFps,' fps')}${decoded?' · Decoded '+num(decoded,' fps'):''}`:'';
+      clip.file ? `File timing ${num(fileFps,' fps')}${decoded?' · Decoded '+num(decoded,' fps'):''}${tracking}`:'';
   }
   const clip=state[selected];
   $('timing-info').textContent=`${title(selected)} · File timing ${num(clip.metadata?.fps,' fps')} (sampled timestamps).
@@ -135,13 +143,15 @@ function updateCorrections() {
   $('calculation-state').textContent=messages.join(' ');
   const clip=state[selected];
   const edited=clip.data?.frames.filter(frame=>frame.edited).length ?? 0;
-  $('correction-status').textContent=needsProcessing(clip)
+  $('correction-status').textContent=requiresGuide(clip)
+    ? 'Place a brace guide or choose pose detection without a guide.'
+    : needsProcessing(clip)
     ? 'Brace guide changed. Process the video again to apply it.'
     : clip.dirty
     ? `${edited} corrected frames in this clip. Recalculate to apply current edits and timing settings.`
     : clip.result ? `Revision ${clip.revision}: ${clip.result.correctedFrames} corrected frames included in these results.`:'';
   $('correction-actions').hidden=!clip.data || !!active;
-  $('apply-corrections').disabled=!clip.data || !clip.dirty || !!active || needsProcessing(clip) || !!guide;
+  $('apply-corrections').disabled=!clip.data || !clip.dirty || !!active || needsProcessing(clip) || requiresGuide(clip) || !!guide;
   const braceResults=sides.filter(side=>state[side].result?.braceAssisted);
   $('brace-summary').hidden=!braceResults.length;
   $('brace-summary').textContent=braceResults.map(side=>{
@@ -448,6 +458,10 @@ $('clear-brace').addEventListener('click',()=>{
   state[selected].braceSeed=null;
   pending(selected);controls();void preview();
 });
+$('pose-only').addEventListener('change',()=>{
+  state[selected].poseOnly=$('pose-only').checked;
+  controls();
+});
 $('propagate').addEventListener('change',()=>{
   state[selected].propagate=$('propagate').checked;
   pending(selected);controls();
@@ -457,7 +471,7 @@ $('practice').addEventListener('change',()=>{
   pending(selected);renderResults();
 });
 $('apply-corrections').addEventListener('click',()=>{
-  if (needsProcessing(state[selected])) return;
+  if (needsProcessing(state[selected]) || requiresGuide(state[selected])) return;
   try {
     recalculate(selected);renderResults();controls();void preview();
     report(`${title(selected)} results recalculated from current landmarks. Revision ${state[selected].revision}.`);
@@ -492,6 +506,15 @@ $('prepare').addEventListener('click',async()=>{
 $('process').addEventListener('click',async()=>{
   const available=sides.filter(side=>state[side].file);
   if (active || preparing || guide || !available.length) return;
+  const needsGuide=available.find(side=>requiresGuide(state[side]));
+  if (needsGuide) {
+    choose(needsGuide);
+    $('brace-guide').scrollIntoView({block:'center'});
+    const message=`Place the ${needsGuide} brace guide or select pose detection without a guide.`;
+    $('brace-status').textContent=message;
+    report(message,true);
+    return;
+  }
   active=new AbortController();
   const signal=active.signal;
   closePreview();
@@ -515,7 +538,8 @@ $('process').addEventListener('click',async()=>{
           model=await engine();
           data=await scan(clip.file,side,clip.turn,model,signal,(count,time,stage)=>report(stage==='verify'
             ? `${title(side)} · Checking brace track backwards · ${count}/${time} frames`
-            : `${title(side)} · ${count} frames · ${time.toFixed(1)} s of video`),software,activeSeed(clip));
+            : `${title(side)} · ${activeSeed(clip)?'Tracking brace':'Tracking pose'} · ${count} frames · ${time.toFixed(1)} s of video`),
+          software,activeSeed(clip));
           break;
         } catch(error) {
           signal.throwIfAborted();
@@ -579,6 +603,7 @@ canvas.addEventListener('click',async event=>{
         if (guide!==placing || state[selected]!==clip || viewed?.side!==selected || viewed.index!==0) return;
         seedBrace(braceImage(canvas,document.createElement('canvas')),placing.seed);
         clip.braceSeed=placing.seed;
+        clip.poseOnly=false;
         guide=null;
         pending(selected);
         report('Brace guide placed. Process the video when ready.');

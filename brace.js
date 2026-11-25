@@ -14,7 +14,15 @@ function rgb(image,x,y) {
   return [image.data[start],image.data[start+1],image.data[start+2]];
 }
 
-function appearance(image,point) {
+function colorProfile(pixels) {
+  const channels=[0,1,2].map(i=>median(pixels.map(pixel=>pixel[i])));
+  const value=Math.max(...channels);
+  const chroma=channels.map(v=>v-value);
+  const spread=median(pixels.map(color=>Math.abs(Math.max(...color)-value)));
+  return {value,chroma,spread};
+}
+
+function appearance(image,point,axis,length) {
   const pixels=[];
   for (let y=-3;y<=3;y++) {
     for (let x=-3;x<=3;x++) {
@@ -22,11 +30,24 @@ function appearance(image,point) {
       if (color) pixels.push(color);
     }
   }
-  const channels=[0,1,2].map(i=>median(pixels.map(pixel=>pixel[i])));
-  const value=Math.max(...channels);
-  const chroma=channels.map(v=>v-value);
-  const spread=median(pixels.map(color=>Math.abs(Math.max(...color)-value)));
-  return {value,chroma,spread};
+  const local=colorProfile(pixels);
+  const panel=[];
+  for (let fraction=.24;fraction<=.80;fraction+=.025) {
+    for (let lateral=-.045;lateral<=.046;lateral+=.015) {
+      const pt=transform(axis,fraction*length,lateral*length);
+      const color=rgb(image,pt.x,pt.y);
+      if (!color) continue;
+      const value=Math.max(...color);
+      const error=color.reduce((sum,channel,i)=>sum+Math.abs(channel-value-local.chroma[i]),0);
+      if (value>=Math.max(3,local.value-52) && value<=local.value+23 && error<=41)
+        panel.push(color);
+    }
+  }
+  if (panel.length<35) return local;
+  const interior=colorProfile(panel);
+  // When the tap is on a highlight or a lighter fabric strip, use the
+  // representative colour observed along the panel instead.
+  return local.value-interior.value>=12 ? interior : local;
 }
 
 function maskFor(image,style) {
@@ -60,9 +81,6 @@ function poseAt(x,y,angle) {
 }
 
 export function seedBrace(image,seed) {
-  if (![seed.hip,seed.ankle,seed.panel].every(p=>p && Number.isFinite(p.x) &&
-      Number.isFinite(p.y) && p.x>=0 && p.x<=1 && p.y>=0 && p.y<=1))
-    throw new Error('Place all three points within the video.');
   const pixel=point=>({x:point.x*image.width,y:point.y*image.height});
   const hip=pixel(seed.hip),ankle=pixel(seed.ankle),panel=pixel(seed.panel);
   const length=distance(hip,ankle);
@@ -72,7 +90,7 @@ export function seedBrace(image,seed) {
   const across=-(panel.x-hip.x)*initial.s+(panel.y-hip.y)*initial.c;
   if (along<.12*length || along>.9*length || Math.abs(across)>.17*length)
     throw new Error('Tap a padded brace panel between the hip and ankle.');
-  const style=appearance(image,panel);
+  const style=appearance(image,panel,initial,length);
   const model={width:image.width,height:image.height,length,style,initial,rows:[]};
   const mask=maskFor(image,style);
   // Learn outlines where the seed colour contrasts with the pixels immediately outside the brace.
@@ -236,7 +254,6 @@ export function startBraceTrack(model,aspect) {
       // Use the pixels in each uncertain frame to refit a short stretch between trusted fits.
       // Time adjacency alone never fills a frame without image support.
       for (let i=1;i<verified.length-1;i++) {
-        signal.throwIfAborted();
         if (verified[i].points || !verified[i-1].points) continue;
         const start=i-1;
         let end=i+1;

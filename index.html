@@ -15,7 +15,7 @@
 <main>
   <header class="masthead">
     <img src="./icons/askling-video-192.png" alt="" width="37" height="37">
-    <span>LIHPS <b>MOTION ANGLE</b></span><small class="version">v0.4.0</small>
+    <span>LIHPS <b>MOTION ANGLE</b></span><small class="version">v0.4.1</small>
   </header>
   <h1>Askling H-Test</h1>
   <p class="subtitle">Video analysis</p>
@@ -85,6 +85,7 @@
     <p id="brace-status">Mark the hip, ankle and a solid padded panel on the first resting frame.</p>
     <button class="soft" id="seed-brace">Place brace guide</button>
     <button class="soft" id="clear-brace" hidden>Remove guide</button>
+    <label class="check" id="pose-only-option"><input type="checkbox" id="pose-only"> Use pose detection without a brace guide</label>
   </section>
   <div class="card" id="correction-actions" hidden>
     <label class="check" id="propagate-option" hidden><input type="checkbox" id="propagate"> Apply hip and ankle corrections to nearby tracked frames</label>
